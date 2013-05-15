@@ -13,6 +13,7 @@
   <depend package="kingfisher_msgs"/>
   <depend package="std_msgs"/>
   <depend package="dynamic_reconfigure"/>
+  <depend package="control_toolbox"/>
 
 </package>
 
