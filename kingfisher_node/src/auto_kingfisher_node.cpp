@@ -2,6 +2,7 @@
 #include <dynamic_reconfigure/server.h>
 #include <kingfisher_node/TwistConfig.h>
 #include <sensor_msgs/Imu.h>
+#include <sensor_msgs/Joy.h>
 #include <control_toolbox/pid.h>
 #include <string.h>
 #include <kingfisher_msgs/Drive.h>
@@ -11,6 +12,7 @@
 #include <geometry_msgs/Quaternion.h>
 #include <geometry_msgs/QuaternionStamped.h>
 #include <geometry_msgs/Twist.h>
+
 
 class AutoTwistCompensator
 {
@@ -23,16 +25,17 @@ class AutoTwistCompensator
             node_.param<double>("yaw_compensator/ki", ki,0.0);
             node_.param<double>("yaw_compensator/i1", i1,0.0);
             node_.param<double>("yaw_compensator/i2", i2,-0.0);
-	    node_.param<double>("rotation_scale",rotation_scale,0.2);
-	    node_.param<double>("fwd_speed_scale",fwd_speed_scale,1);
-	    node_.param<double>("rev_speed_scale",rev_speed_scale,1);
-	    node_.param<double>("left_max",left_max,1);
-	    node_.param<double>("right_max",right_max,1);
-	    node_.param<bool>("auto_control",auto_control,false);
+	        node_.param<double>("rotation_scale",rotation_scale,0.2);
+    	    node_.param<double>("fwd_speed_scale",fwd_speed_scale,1);
+	        node_.param<double>("rev_speed_scale",rev_speed_scale,1);
+	        node_.param<double>("left_max",left_max,1);
+    	    node_.param<double>("right_max",right_max,1);
+	        node_.param<bool>("auto_control",auto_control,false);
 
-	    ROS_INFO("Subscribing to cmd_vel");
+	        ROS_INFO("Subscribing to cmd_vel");
 
             cmd_pub = node_.advertise<kingfisher_msgs::Drive>("cmd_drive",1000);
+           
 
 	    yaw_rate_pid.reset();
 	    yaw_rate_pid.initPid(kp,ki,kd,i1,i2);
@@ -44,11 +47,10 @@ class AutoTwistCompensator
             rev_speed_scale = config.rev_speed_scale;
             left_max = config.left_max;
             right_max = config.right_max;
-	
-
         }
         void twist_callback(const geometry_msgs::Twist msg);
         void imu_callback(const sensor_msgs::Imu msg);
+        void joy_callback(const sensor_msgs::Joy msg);
 
     private:
         ros::NodeHandle node_;
@@ -61,6 +63,7 @@ class AutoTwistCompensator
 	control_toolbox::Pid yaw_rate_pid;
 	double yaw_rate_l_error;
 	bool auto_control;
+    int last_button;
 
 };
 
@@ -70,12 +73,31 @@ void AutoTwistCompensator::imu_callback(const sensor_msgs::Imu msg) {
     yaw_reading_time = ros::Time::now().toSec();
 }
 
+void AutoTwistCompensator::joy_callback(const sensor_msgs::Joy msg) 
+{
+   int button_sensor = msg.buttons[13];
+   if (button_sensor==1 && last_button==0) { //catch button transition from 0 to 1
+       auto_control = !auto_control;
+       if (auto_control) 
+           ROS_INFO("Boat in Autonomous mode");
+       else
+           ROS_INFO("Boat in Raw R/C mode");
+   }
+   last_button = button_sensor;
+}
+
+   
+
 void AutoTwistCompensator::twist_callback(const geometry_msgs::Twist msg)
 {
     kingfisher_msgs::Drive drive_msg;         
 
     if (auto_control) {
-	
+	    double time = ros::Time::now().toSec();    
+        double output = sin(time);
+        drive_msg.left = output;
+        drive_msg.right = 0;
+
 
     }
     else {
@@ -109,10 +131,15 @@ int main(int argc, char **argv)
     ros::init(argc,argv, "kingfisher_node");
     ros::NodeHandle nh;
 
+
+
     AutoTwistCompensator kingfisher_twist_compensator(nh);
 
     ros::Subscriber cmd_sub = nh.subscribe("cmd_vel",1,&AutoTwistCompensator::twist_callback, &kingfisher_twist_compensator);
     ros::Subscriber imu_sub = nh.subscribe("imu/data",1,&AutoTwistCompensator::imu_callback, &kingfisher_twist_compensator);
+
+    ros::Subscriber joy_sub = nh.subscribe("joy",1,&AutoTwistCompensator::joy_callback, &kingfisher_twist_compensator);
+
 
     ros::spin();
     return 0;
