@@ -45,8 +45,8 @@ class ForceCompensator
             if (thrust > 0)
                 output = thrust * (MAX_OUTPUT/MAX_FWD_THRUST);
             else if (thrust < 0)
-                output = -1 * thrust * (MAX_OUTPUT/MAX_BCK_THRUST);
-            return output;    
+                output = thrust * (MAX_OUTPUT/MAX_BCK_THRUST);
+            return output; 
         }
 
         double saturate_thrusters (double thrust) {
@@ -59,7 +59,7 @@ class ForceCompensator
         void update_forces (geometry_msgs::Wrench output) {
             kingfisher_msgs::Drive cmd_output;
             double fx = output.force.x;
-            double tauz = output.force.z;
+            double tauz = output.torque.z;
 
 
             //yaw torque maxed out at max torque achievable with the help of reverse thrust
@@ -73,32 +73,36 @@ class ForceCompensator
 
             //Provide maximum allowable thrust after yaw torque is guaranteed 
             double max_fx = 0;
-            if (tauz > 0) {
-                if (fx > 0) { //forward thrust on the left thruster will be limiting factor 
+            if (tauz >= 0) {
+                if (fx >= 0) { //forward thrust on the left thruster will be limiting factor 
                     max_fx = (MAX_FWD_THRUST - left_thrust) * 2;
                     fx = std::min(max_fx,fx);
                 }
                 else { //backward thrust on the right thruster will be limiting factor
-                    max_fx = (MAX_BCK_THRUST - right_thrust) * 2;
+                    max_fx = (-MAX_BCK_THRUST - right_thrust) * 2;
                     fx = std::max(max_fx,fx);
                 }
             }
             else { 
-                if (fx > 0 ) {
+                if (fx >= 0 ) {
                     max_fx = (MAX_FWD_THRUST - right_thrust) * 2;
                     fx = std::min(max_fx,fx);
                 }
                 else {
-                    max_fx = (MAX_BCK_THRUST - left_thrust) * 2;
+                    max_fx = (-MAX_BCK_THRUST - left_thrust) * 2;
                     fx = std::max(max_fx,fx);
                 }
             }
+
 
             left_thrust += fx /2.0;
             right_thrust += fx/2.0;
             
             left_thrust = saturate_thrusters (left_thrust);
             right_thrust = saturate_thrusters (right_thrust);
+
+
+            ROS_INFO("Left thrust:%f,Right thrust:%f",left_thrust,right_thrust);
 
             cmd_output.left = get_output (left_thrust);
             cmd_output.right = get_output (right_thrust);
@@ -110,7 +114,7 @@ class ForceCompensator
         void pub_effective_wrench(double left_thrust,double right_thrust) {
             geometry_msgs::Wrench effective_output;
             effective_output.force.x = left_thrust + right_thrust;
-            effective_output.torque.z = (left_thrust - right_thrust)/BOAT_WIDTH;
+            effective_output.torque.z = (left_thrust - right_thrust)*BOAT_WIDTH;
             eff_pub.publish(effective_output);  
         }
 
@@ -124,6 +128,9 @@ class KingfisherController {
         geometry_msgs::Wrench force_output;
         int last_button;
         bool auto_control;
+
+        double curr_yawrate_reading;
+        double yawrate_reading_time;
 
     public:
 
@@ -150,12 +157,24 @@ class KingfisherController {
         }
 
         void twist_callback(const geometry_msgs::Twist msg) { 
-            force_output.force.x = msg.linear.x * 4;
-            force_output.torque.z = msg.angular.z * 1;
+
+            if (auto_control) {
+                //Autonomous Control
+            }
+            else {
+                //RC Control
+                if (msg.linear.x >= 0) 
+                    force_output.force.x = msg.linear.x * 40;
+                else 
+                    force_output.force.x = msg.linear.x * 16;
+
+                force_output.torque.z = msg.angular.z * MAX_BCK_THRUST*2*BOAT_WIDTH;
+            }
         }
 
         void imu_callback(const sensor_msgs::Imu msg) {
-            
+           curr_yawrate_reading = msg.angular_velocity.z;
+           yawrate_reading_time = ros::Time::now().toSec();
         }
 
         void control_update(const ros::TimerEvent& event) {
