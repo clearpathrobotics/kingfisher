@@ -19,8 +19,11 @@
 
 #define BOAT_WIDTH 0.381 //m, ~15inches
 #define MAX_FWD_THRUST 35.0 //Newtons
-#define MAX_BCK_THRUST 8.0 //Newtons
+#define MAX_BCK_THRUST 20.0 //Newtons
 #define MAX_OUTPUT 1
+
+#define MAX_YAW_RATE 0.4 //rad/s
+
         
 class ForceCompensator
 {
@@ -61,7 +64,6 @@ class ForceCompensator
             double fx = output.force.x;
             double tauz = output.torque.z;
 
-
             //yaw torque maxed out at max torque achievable with the help of reverse thrust
             double max_tauz = MAX_BCK_THRUST*2*BOAT_WIDTH;
             tauz = std::min(tauz, max_tauz);
@@ -94,7 +96,6 @@ class ForceCompensator
                 }
             }
 
-
             left_thrust += fx /2.0;
             right_thrust += fx/2.0;
             
@@ -102,7 +103,7 @@ class ForceCompensator
             right_thrust = saturate_thrusters (right_thrust);
 
 
-            ROS_INFO("Left thrust:%f,Right thrust:%f",left_thrust,right_thrust);
+            ROS_INFO("FX:%f,TAUZ:%f,LTHR:%f,RTHR:%f",fx,tauz,left_thrust,right_thrust);
 
             cmd_output.left = get_output (left_thrust);
             cmd_output.right = get_output (right_thrust);
@@ -117,64 +118,83 @@ class ForceCompensator
             effective_output.torque.z = (left_thrust - right_thrust)*BOAT_WIDTH;
             eff_pub.publish(effective_output);  
         }
-
 };
-
 
 class KingfisherController {
     private:
         ros::NodeHandle node_;
         ForceCompensator *force_compensator;
         geometry_msgs::Wrench force_output;
-        int last_button;
-        bool auto_control;
 
-        double curr_yawrate_reading;
-        double yawrate_reading_time;
+        control_toolbox::Pid yr_pid;
+        double yr_kp, yr_ki, yr_kd,yr_i1,yr_i2;
+        double yr_cmd,yr_cmd_time,last_yr_cmd_time;
+        double spd_cmd;
+        double cmd_vel_time;
+        double yr_meas,yr_meas_time;
+        double imu_data_timeout;
 
     public:
 
         KingfisherController(ros::NodeHandle &n):node_(n) {
             force_compensator = new ForceCompensator(node_);
-            last_button=0;
-            auto_control = false;
+
+            node_.param<double>("yaw_rate/kp", yr_kp,2.0); 
+            node_.param<double>("yaw_rate/kd", yr_kd,1.0);
+            node_.param<double>("yaw_rate/ki", yr_ki,0.0);
+            node_.param<double>("yaw_rate/i1", yr_i1,MAX_BCK_THRUST*2*BOAT_WIDTH); //clamp integral output at max yaw yorque
+            node_.param<double>("yaw_rate/i2", yr_i2,-MAX_BCK_THRUST*2*BOAT_WIDTH);
+
+            node_.param<double>("yaw_rate/i1", yr_i1,0.0); //clamp integral output at max yaw yorque
+            node_.param<double>("yaw_rate/i2", yr_i2,0.0);
+
+            node_.param<double>("imu_data_timeout",imu_data_timeout,1/10.0);
+
+            yr_pid.reset();
+	        yr_pid.initPid(yr_kp,yr_ki,yr_kd,yr_i1,yr_i2);
+            yr_cmd = 0;
+            spd_cmd = 0;
+            yr_cmd_time = ros::Time::now().toSec();
+            last_yr_cmd_time = ros::Time::now().toSec();
+
+            yr_meas = 0;
+            yr_meas_time=0;
+
+
         }
         ~KingfisherController() {
             delete force_compensator;
         }
 
-        void joy_callback(const sensor_msgs::Joy msg) { 
-            int button_sensor = msg.buttons[13];
-            if (button_sensor==1 && last_button==0) { //catch button transition from 0 to 1
-                auto_control = !auto_control;
-                if (auto_control) 
-                    ROS_INFO("Boat in Autonomous mode");
-                else
-                    ROS_INFO("Boat in R/C mode");
-            }
-            last_button = button_sensor;
-            
+        void wrench_callback(const geometry_msgs::Wrench msg) { 
+            force_output.force.x = msg.force.x;
+            force_output.torque.z = msg.torque.z;
         }
 
         void twist_callback(const geometry_msgs::Twist msg) { 
+            //Autonomous twist control
+            yr_cmd = msg.angular.z;
+            spd_cmd = msg.linear.x;
+            yr_cmd_time = ros::Time::now().toSec();
+            force_output.torque.z  = yr_compensator();
+        }
 
-            if (auto_control) {
-                //Autonomous Control
+        double yr_compensator() {
+            if (ros::Time::now().toSec() - yr_meas_time > imu_data_timeout) {
+                ROS_ERROR("IMU Data timeout, controller deactivated. IMU data not being received");
+                return 0.0;
             }
             else {
-                //RC Control
-                if (msg.linear.x >= 0) 
-                    force_output.force.x = msg.linear.x * 40;
-                else 
-                    force_output.force.x = msg.linear.x * 16;
-
-                force_output.torque.z = msg.angular.z * MAX_BCK_THRUST*2*BOAT_WIDTH;
+                //calculate pid torque z
+                double dt = yr_cmd_time - last_yr_cmd_time; 
+                double yr_error = yr_cmd - yr_meas;   
+                return yr_pid.updatePid(yr_error, ros::Duration(dt));
             }
         }
 
         void imu_callback(const sensor_msgs::Imu msg) {
-           curr_yawrate_reading = msg.angular_velocity.z;
-           yawrate_reading_time = ros::Time::now().toSec();
+           yr_meas = msg.angular_velocity.z;
+           yr_meas_time = ros::Time::now().toSec();
         }
 
         void control_update(const ros::TimerEvent& event) {

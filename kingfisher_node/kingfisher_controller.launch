@@ -1,9 +1,10 @@
 <launch>
 
-<param name="yaw_compensator/kp" value="4.0"/>
-<param name="yaw_compensator/ki" value="0.4"/>
-<param name="yaw_compensator/kd" value="3.5"/>
-<param name="rotation_scale" value="2"/>
+<param name="yaw_rate/kp" value="20.0"/>
+<param name="yaw_rate/ki" value="1"/>
+<param name="yaw_rate/kd" value="5"/>
+
+
 
 <node pkg="kingfisher_node" type="kingfisher_controller" name="kingfisher_controller" output="screen"/>
 
