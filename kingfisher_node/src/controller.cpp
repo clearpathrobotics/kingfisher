@@ -4,11 +4,10 @@ Controller::Controller(ros::NodeHandle &n):node_(n) {
     force_compensator_ = new ForceCompensator(node_);
     node_.param<double>("imu_data_timeout",imu_data_timeout_,1/10.0);
 
-
-
     //Setup Yaw Rate Controller
     yr_dbg_pub_ = node_.advertise<geometry_msgs::Vector3>("yaw_rate_debug",1000);
 
+    node_.param<double>("yaw_rate/kf", yr_kf_,10);
     node_.param<double>("yaw_rate/kp", yr_kp_,2.0); 
     node_.param<double>("yaw_rate/kd", yr_kd_,1.0);
     node_.param<double>("yaw_rate/ki", yr_ki_,0.0);
@@ -19,26 +18,27 @@ Controller::Controller(ros::NodeHandle &n):node_(n) {
     node_.param<double>("yaw_rate/imin", yr_imin_,0.0);
 
 
+    ROS_INFO("Yaw Rate Params (P,I,D,Max,Min):%f,%f,%f,%f,%f",yr_kp_, yr_ki_,yr_kd_,yr_imax_,yr_imin_);
+
+
     yr_pid_.reset();
     yr_pid_.initPid(yr_kp_,yr_ki_,yr_kd_,yr_imax_,yr_imin_);
     yr_cmd_ = 0;
-    yr_cmd_time_ = ros::Time::now().toSec();
-    last_yr_cmd_time_ = ros::Time::now().toSec();
-    new_yr_cmd_ = false;
-
+    yr_cmd_time_ = 0;
+    last_yr_cmd_time_ = 0;
+    yr_cmd_timeout_ = 0.5; //TODO: parameterize this, why?
 
     yr_meas_ = 0;
     yr_meas_time_=0;
 
-
-
     //Setup Yaw Controller
-    y_dbg_pub_ = node_.advertise<geometry_msgs::Vector3>("yaw_rate_debug",1000);
+    y_dbg_pub_ = node_.advertise<geometry_msgs::Vector3>("yaw_debug",1000);
     y_pid_.reset();
     y_pid_.initPid(y_kp_,y_ki_,y_kd_,y_imax_,y_imin_);
     y_cmd_ = 0;
     y_cmd_time_ = ros::Time::now().toSec();
     last_y_cmd_time_ = ros::Time::now().toSec();
+
 
     node_.param<double>("yaw/kp", y_kp_,2.0); 
     node_.param<double>("yaw/kd", y_kd_,1.0);
@@ -50,7 +50,6 @@ Controller::Controller(ros::NodeHandle &n):node_(n) {
     node_.param<double>("yaw/imin", y_imin_,0.0);
     y_meas_ = 0;
     y_meas_time_=0;
-    new_yaw_cmd_ = false;
  
     //Setup Speed Control
     spd_cmd_ = 0;
@@ -66,16 +65,14 @@ double Controller::yr_compensator() {
         //calculate pid torque z
         double dt = yr_cmd_time_ - last_yr_cmd_time_; 
         double yr_error = yr_cmd_ - yr_meas_;   
-        double yr_comp_output = yr_pid_.updatePid(yr_error, ros::Duration(dt));
-
+        double yr_comp_output = yr_pid_.updatePid(-yr_error, ros::Duration(1/20.0));
+        yr_comp_output = yr_comp_output + yr_kf_*yr_cmd_; //feedforward
         geometry_msgs::Vector3 dbg_info;             
         dbg_info.x = yr_cmd_;
         dbg_info.y = yr_meas_;
         dbg_info.z = yr_comp_output;
         yr_dbg_pub_.publish(dbg_info);
-  
         return yr_comp_output;
-        
     }
 }
 
@@ -108,12 +105,9 @@ int main(int argc, char **argv)
     Controller kf_control(nh);
     ros::Subscriber vel_sub = nh.subscribe("cmd_vel",1,&Controller::twist_callback, &kf_control);
     ros::Subscriber wrench_sub = nh.subscribe("cmd_wrench",1,&Controller::wrench_callback, &kf_control);
-
     ros::Subscriber yaw_sub = nh.subscribe("cmd_yaw",1,&Controller::yaw_callback, &kf_control);
-
-
     ros::Subscriber imu_sub = nh.subscribe("imu/data",1,&Controller::imu_callback, &kf_control);
-    ros::Timer control_output = nh.createTimer(ros::Duration(0.1), &Controller::control_update,&kf_control); 
+    ros::Timer control_output = nh.createTimer(ros::Duration(1/50.0), &Controller::control_update,&kf_control); 
     ros::spin();
 
     return 0;

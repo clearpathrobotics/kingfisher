@@ -55,14 +55,14 @@ void ForceCompensator::update_forces (geometry_msgs::Wrench output) {
         }
     }
 
-    left_thrust += fx /2.0;
+    left_thrust += fx/2.0;
     right_thrust += fx/2.0;
     
     left_thrust = saturate_thrusters (left_thrust);
     right_thrust = saturate_thrusters (right_thrust);
 
 
-    ROS_INFO("FX:%f,TAUZ:%f,LTHR:%f,RTHR:%f",fx,tauz,left_thrust,right_thrust);
+    //ROS_INFO("FX:%f,TAUZ:%f,LTHR:%f,RTHR:%f",fx,tauz,left_thrust,right_thrust);
 
     cmd_output.left = get_output (left_thrust);
     cmd_output.right = get_output (right_thrust);

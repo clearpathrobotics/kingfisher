@@ -18,24 +18,19 @@ class Controller {
         geometry_msgs::Wrench force_output_;
         double imu_data_timeout_;
 
-
-
         //Yaw Rate Controller Details        
         control_toolbox::Pid yr_pid_;
         ros::Publisher yr_dbg_pub_;
-        double yr_kp_, yr_ki_, yr_kd_,yr_imax_,yr_imin_;
-        double yr_cmd_,yr_cmd_time_,last_yr_cmd_time_;
+        double yr_kf_,yr_kp_, yr_ki_, yr_kd_,yr_imax_,yr_imin_;
+        double yr_cmd_,yr_cmd_time_,last_yr_cmd_time_,yr_cmd_timeout_;
         double yr_meas_,yr_meas_time_;
-        bool new_yr_cmd_;
-
 
         //Yaw Control Details        
         control_toolbox::Pid y_pid_;
         ros::Publisher y_dbg_pub_;
         double y_kp_, y_ki_, y_kd_,y_imax_,y_imin_;
-        double y_cmd_,y_cmd_time_,last_y_cmd_time_;
+        double y_cmd_,y_cmd_time_,last_y_cmd_time_,y_cmd_timeout_;
         double y_meas_,y_meas_time_;
-        bool new_yaw_cmd_;
 
         //Speed Control details
         double spd_cmd_;
@@ -55,7 +50,6 @@ class Controller {
         void yaw_callback(const std_msgs::Float32 msg) {
             y_cmd_ = msg.data;
             y_cmd_time_ = ros::Time::now().toSec();
-            new_yaw_cmd_ = true;
         }
 
         void wrench_callback(const geometry_msgs::Wrench msg) { 
@@ -66,18 +60,18 @@ class Controller {
         void twist_callback(const geometry_msgs::Twist msg) { 
             //Autonomous twist control
             yr_cmd_ = msg.angular.z;
+            //TODO: Put in reconfigurable speed mapping
             spd_cmd_ = msg.linear.x;
+            force_output_.force.x = spd_cmd_;
             yr_cmd_time_ = ros::Time::now().toSec();
-            new_yr_cmd_ = true;
         }
 
         void imu_callback(const sensor_msgs::Imu msg) {
             yr_meas_ = msg.angular_velocity.z;
             yr_meas_time_ = ros::Time::now().toSec();
-            //TODO: Is this the best way to handle this? Theoretically it would be best if forces are implemented the moment new IMU data comes in. However, that does not sync well because there are other controllers (like speed) that are running in conjunction
-            if (new_yr_cmd_) {
+//TODO:Need universal command timeout
+            if (ros::Time::now().toSec() - yr_cmd_time_ < yr_cmd_timeout_) {
                 force_output_.torque.z  = yr_compensator(); 
-                new_yr_cmd_ = false;
             }
         }
 

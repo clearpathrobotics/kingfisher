@@ -1,11 +1,13 @@
 <launch>
 
-<param name="yaw_rate/kp" value="20.0"/>
-<param name="yaw_rate/ki" value="1"/>
-<param name="yaw_rate/kd" value="5"/>
+<param name="yaw_rate/kf" value="50"/>
+<param name="yaw_rate/kp" value="40"/>
+<param name="yaw_rate/ki" value="30"/>
+<param name="yaw_rate/kd" value="30"/>
+<param name="yaw_rate/imax" value="50.0"/>
+<param name="yaw_rate/imin" value="-50.0"/>
 
 
-
-<node pkg="kingfisher_node" type="kingfisher_controller" name="kingfisher_controller" output="screen"/>
+<node pkg="kingfisher_node" type="controller" name="controller" output="screen"/>
 
 </launch>
