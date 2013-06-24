@@ -1,0 +1,78 @@
+#!/bin/bash
+
+BAG_FILE=/tmp/imu_record.bag
+CAL_FILE=/tmp/um6_calibration.yaml
+
+
+ROS_VERSION=$(rospack find roscpp | cut -d/ -f4)
+if [[ "$?" != "0" ]]; then
+  echo "Executing rospack returned error."
+  exit 1
+fi
+
+ROSTOPIC_OUTPUT=$(rostopic list)
+if [[ "$?" != "0" ]]; then
+  echo "ROS appears not to be running. Please start ROS service:"
+  echo "sudo service kingfisher-core start"
+  exit 1
+fi
+
+#if [[ "$ROSTOPIC_OUTPUT" =~ imu/mag ]]; then
+#  :
+#else
+#  echo "Please ensure that the /imu/mag and /imu/rpy topics are being broadcast, and re-run this script."
+#  exit 1
+#fi
+
+# Insert check for Kingfisher active?
+
+echo "Starting rosbag record."
+rosbag record /imu/rpy /imu/data /imu/mag --output-name=$BAG_FILE & > /dev/null
+if [[ "$?" != "0" ]]; then
+  echo "Unable to run rosbag record. Is the ROS environment set up correctly?"
+  exit 1
+fi
+ROSBAG_PID=$!
+
+echo "Starting motion commands."
+rostopic pub /cmd_drive kingfisher_msgs/Drive '{ left: 0.2, right: -0.6 }' -r 15 & > /dev/null
+if [[ "$?" != "0" ]]; then
+  kill $ROSBAG_PID
+  echo "Unable to run rostopic pub. Are the kingfisher messages built and in the ROS_PACKAGE_PATH?"
+  exit 1
+fi
+ROSTOPIC_PID=$!
+
+sleep 2
+
+echo "Test underway."
+
+for i in {0..59}; do
+  echo -en "\rTime remaining: $((60-i))  ";
+  sleep 1
+done
+
+echo "Shutting down rosbag record."
+kill $ROSBAG_PID
+
+echo "Shutting down motion command publisher."
+kill $ROSTOPIC_PID
+
+echo "Computing magnetic calibration."
+rosrun imu_um6 compute_calibration.py $BAG_FILE $CAL_FILE &> /dev/null
+if [[ "$?" != "0" ]]; then
+  echo "Unable to compute calibration from recorded bag."
+  exit 1
+fi
+
+if [[ -r $CAL_FILE ]]; then
+  echo "Calibration generated in $CAL_FILE."
+  read -r -p "Copy calibration to /etc/ros/fuerte/kingfisher? [Y/n] " response
+  response=${response,,}    # tolower
+  if [[ $response =~ ^(yes|y)$ ]]; then
+    sudo cp $CAL_FILE /etc/ros/fuerte/kingfisher
+    echo "Restart ROS service to begin using saved calibration."
+  else
+    echo "Skipping."
+  fi
+fi
