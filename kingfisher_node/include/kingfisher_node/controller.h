@@ -9,6 +9,8 @@
 #include <std_msgs/Float32.h>
 #include <kingfisher_node/kf_constants.h>
 #include <kingfisher_node/force_compensator.h>
+#include <kingfisher_msgs/Helm.h>
+#include <kingfisher_msgs/Heading.h>
 
 
 class Controller {
@@ -28,12 +30,14 @@ class Controller {
         //Yaw Control Details        
         control_toolbox::Pid y_pid_;
         ros::Publisher y_dbg_pub_;
-        double y_kp_, y_ki_, y_kd_,y_imax_,y_imin_;
+        double y_kf_,y_kp_, y_ki_, y_kd_,y_imax_,y_imin_;
         double y_cmd_,y_cmd_time_,last_y_cmd_time_,y_cmd_timeout_;
         double y_meas_,y_meas_time_;
 
         //Speed Control details
         double spd_cmd_;
+        double max_fwd_vel_,max_fwd_force_,max_bck_vel_,max_bck_force_;
+        
 
 
     public:
@@ -46,31 +50,40 @@ class Controller {
         double y_compensator();
 
 
-        //TODO:Fix yaw command input, should be Odom or Pose
-        void yaw_callback(const std_msgs::Float32 msg) {
-            y_cmd_ = msg.data;
-            y_cmd_time_ = ros::Time::now().toSec();
-        }
-
         void wrench_callback(const geometry_msgs::Wrench msg) { 
             force_output_.force.x = msg.force.x;
             force_output_.torque.z = msg.torque.z;
         }
 
-        void twist_callback(const geometry_msgs::Twist msg) { 
-            //Autonomous twist control
-            yr_cmd_ = msg.angular.z;
-            //TODO: Put in reconfigurable speed mapping
-            spd_cmd_ = msg.linear.x;
-            force_output_.force.x = spd_cmd_;
+        void heading_callback(const kingfisher_msgs::Heading msg) {
+            y_cmd_ = msg.heading;
+            y_cmd_time_ = ros::Time::now().toSec();
+
+            spd_cmd_ = msg.speed;
+            force_output_.force.x = speed_control(); //TODO: Can run in its own callback once speed feedback is available
+        }            
+
+        void helm_callback(const kingfisher_msgs::Helm msg) { 
+            //Basic Helm Control
+            double thrust_pct = msg.thrust_pct;
+            if (thrust_pct >= 0)
+                force_output_.force.x = thrust_pct * (max_fwd_force_/100);
+            else
+                force_output_.force.x = -thrust_pct * (max_bck_force_/100);
+            yr_cmd_ = msg.yaw_rate;
             yr_cmd_time_ = ros::Time::now().toSec();
+
         }
 
         void imu_callback(const sensor_msgs::Imu msg) {
             yr_meas_ = msg.angular_velocity.z;
             yr_meas_time_ = ros::Time::now().toSec();
-//TODO:Need universal command timeout
-            if (ros::Time::now().toSec() - yr_cmd_time_ < yr_cmd_timeout_) {
+            //TODO:Need universal command timeout
+            if (ros::Time::now().toSec() - y_cmd_time_ < y_cmd_timeout_) { //prioritize yaw command 
+                yr_cmd_ = y_compensator();
+                force_output_.torque.z = yr_compensator();
+            }
+            else if(ros::Time::now().toSec() - yr_cmd_time_ < yr_cmd_timeout_) {
                 force_output_.torque.z  = yr_compensator(); 
             }
         }
@@ -79,6 +92,12 @@ class Controller {
             force_compensator_->update_forces(force_output_);
         }
 
+        double speed_control() {
+            if (spd_cmd_ >= 0)
+                return (spd_cmd_*(max_fwd_force_/max_fwd_vel_));
+            else
+                return (spd_cmd_*(max_bck_force_/max_bck_vel_));
+        }
 };
 
              
