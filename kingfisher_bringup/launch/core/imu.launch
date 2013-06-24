@@ -2,4 +2,7 @@
     <node pkg="imu_um6" type="imu_um6_node.py" name="imu_um6_node" respawn="true" output="screen">
         <param name="port" type="string" value="/dev/clearpath/imu"/>
     </node>
+    <node pkg="imu_um6" type="imu_raw_mag_compass.py" name="imu_raw_mag_compass" respawn="true" output="screen">
+        <rosparam file="/etc/ros/fuerte/kingfisher/um6_calibration.yaml" />
+    </node>
 </launch>

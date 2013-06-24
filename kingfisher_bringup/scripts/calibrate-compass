@@ -35,7 +35,7 @@ fi
 ROSBAG_PID=$!
 
 echo "Starting motion commands."
-rostopic pub /cmd_drive kingfisher_msgs/Drive '{ left: 0.2, right: -0.6 }' -r 15 & > /dev/null
+rostopic pub /cmd_drive kingfisher_msgs/Drive '{ left: 0.3, right: -0.5 }' -r 15 & > /dev/null
 if [[ "$?" != "0" ]]; then
   kill $ROSBAG_PID
   echo "Unable to run rostopic pub. Are the kingfisher messages built and in the ROS_PACKAGE_PATH?"
@@ -51,17 +51,21 @@ for i in {0..59}; do
   echo -en "\rTime remaining: $((60-i))  ";
   sleep 1
 done
+echo
 
 echo "Shutting down rosbag record."
-kill $ROSBAG_PID
+kill -INT $ROSBAG_PID
 
 echo "Shutting down motion command publisher."
-kill $ROSTOPIC_PID
+kill -INT $ROSTOPIC_PID
+
+sleep 2
 
 echo "Computing magnetic calibration."
-rosrun imu_um6 compute_calibration.py $BAG_FILE $CAL_FILE &> /dev/null
+rosrun imu_um6 compute_calibration.py $BAG_FILE $CAL_FILE &> /tmp/compute_output.log
 if [[ "$?" != "0" ]]; then
   echo "Unable to compute calibration from recorded bag."
+  echo "Output in /tmp/compute_output.log"
   exit 1
 fi
 
