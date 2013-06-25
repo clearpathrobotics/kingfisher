@@ -8,6 +8,10 @@ Controller::Controller(ros::NodeHandle &n):node_(n) {
     yr_dbg_pub_ = node_.advertise<geometry_msgs::Vector3>("yaw_rate_debug",1000);
     y_dbg_pub_ = node_.advertise<geometry_msgs::Vector3>("yaw_debug",1000);
 
+    node_.param<double>("wrench_cmd/timeout",wrench_cmd_timeout_,0.5);
+    wrench_cmd_time_ = 0;
+
+
     node_.param<double>("yaw_rate/kf", yr_kf_,10); //Feedforward Gain
     node_.param<double>("yaw_rate/kp", yr_kp_,2.0);  //Proportional Gain
     node_.param<double>("yaw_rate/kd", yr_kd_,1.0); //Derivative Gain
@@ -47,9 +51,9 @@ Controller::Controller(ros::NodeHandle &n):node_(n) {
     //Setup Speed Control (linear mapping)
     spd_cmd_ = 0;
     node_.param<double>("max/fwd_vel", max_fwd_vel_,MAX_FWD_VEL); 
-    node_.param<double>("max/fwd_force", max_fwd_force_,MAX_FWD_THRUST); 
+    node_.param<double>("max/fwd_force", max_fwd_force_,2*MAX_FWD_THRUST); //2 thrusters
     node_.param<double>("max/bck_vel",max_bck_vel_,MAX_BCK_VEL);
-    node_.param<double>("max/bck_force",max_bck_force_,MAX_BCK_THRUST);
+    node_.param<double>("max/bck_force",max_bck_force_,2*MAX_BCK_THRUST);
 }
 
 double Controller::yr_compensator() {
@@ -69,8 +73,8 @@ double Controller::yr_compensator() {
 double Controller::y_compensator() {
     //calculate pid torque z
     double dt = y_cmd_time_ - last_y_cmd_time_; 
-    double y_error = yr_cmd_ - y_meas_;   
-    double y_comp_output = y_pid_.updatePid(y_error, ros::Duration(dt));
+    double y_error = y_cmd_ - y_meas_;   
+    double y_comp_output = y_pid_.updatePid(y_error, ros::Duration(1/20.0));
     geometry_msgs::Vector3 dbg_info;             
     dbg_info.x = y_cmd_;
     dbg_info.y = y_meas_;

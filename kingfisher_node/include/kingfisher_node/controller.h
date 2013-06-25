@@ -3,6 +3,7 @@
 #include <sensor_msgs/Joy.h>
 #include <control_toolbox/pid.h>
 #include <string.h>
+#include <tf/tf.h>
 #include <geometry_msgs/Twist.h>
 #include <geometry_msgs/Vector3.h>
 #include <geometry_msgs/Wrench.h>
@@ -19,6 +20,9 @@ class Controller {
         ForceCompensator *force_compensator_;
         geometry_msgs::Wrench force_output_;
         double imu_data_timeout_;
+
+        //Wrench output (raw forces) 
+        double wrench_cmd_time_,wrench_cmd_timeout_;
 
         //Yaw Rate Controller Details        
         control_toolbox::Pid yr_pid_;
@@ -53,6 +57,7 @@ class Controller {
         void wrench_callback(const geometry_msgs::Wrench msg) { 
             force_output_.force.x = msg.force.x;
             force_output_.torque.z = msg.torque.z;
+            wrench_cmd_time_ = ros::Time::now().toSec();
         }
 
         void heading_callback(const kingfisher_msgs::Heading msg) {
@@ -78,14 +83,28 @@ class Controller {
         void imu_callback(const sensor_msgs::Imu msg) {
             yr_meas_ = msg.angular_velocity.z;
             yr_meas_time_ = ros::Time::now().toSec();
-            //TODO:Need universal command timeout
+
+            y_meas_ = tf::getYaw(msg.orientation);
+            y_meas_time_ = ros::Time::now().toSec();
+
             if (ros::Time::now().toSec() - y_cmd_time_ < y_cmd_timeout_) { //prioritize yaw command 
+                ROS_INFO("Yaw Measurement:%f", y_meas_);
                 yr_cmd_ = y_compensator();
                 force_output_.torque.z = yr_compensator();
             }
             else if(ros::Time::now().toSec() - yr_cmd_time_ < yr_cmd_timeout_) {
                 force_output_.torque.z  = yr_compensator(); 
             }
+            else if(ros::Time::now().toSec() - wrench_cmd_time_ < wrench_cmd_timeout_) {
+                //TODO:Maybe do the filling in of forces here?
+                //Do nothing, force output is already filled
+            }
+            else {
+                ROS_INFO("Command Timeout");
+                force_output_.torque.z = 0;
+                force_output_.force.z = 0;             
+            }
+
         }
 
         void control_update(const ros::TimerEvent& event) {

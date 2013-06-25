@@ -15,6 +15,7 @@
   <depend package="dynamic_reconfigure"/>
   <depend package="control_toolbox"/>
   <depend package="sensor_msgs"/>
+  <depend package="tf"/>
 
 </package>
 
