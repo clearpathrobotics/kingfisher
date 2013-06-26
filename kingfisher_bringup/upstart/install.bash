@@ -21,7 +21,9 @@ pushd `rospack find ${robot}_bringup`/upstart > /dev/null
 
 install_udev_rules
 install_job core eth0 11311
-# install_job interface wlan0 11311
+
+# Dummy calibration file until a real cal is performed.
+touch /etc/ros/$release/kingfisher/um6_calibration.yaml
 
 # Configure ublox GPS.
 ublox_hex=`rospack find ${robot}_bringup`/config/ublox.hex
