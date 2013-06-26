@@ -9,3 +9,4 @@
     version: fuerte-nmea-driver}
 - git: {local-name: declination, uri: 'https://github.com/clearpathrobotics/declination.git'}
 - git: {local-name: nmea, uri: 'https://github.com/clearpathrobotics/nmea.git', version: fuerte-devel}
+- git: {local-name: enu, uri: 'https://bitbucket.org/clearpathrobotics/enu.git'}

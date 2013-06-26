@@ -5,4 +5,14 @@
     <node pkg="imu_um6" type="imu_raw_mag_compass.py" name="imu_raw_mag_compass" respawn="true" output="screen">
         <rosparam file="/etc/ros/fuerte/kingfisher/um6_calibration.yaml" />
     </node>
+
+    <!-- Location of IMU relative to boat datum. This will be removed
+         at some point in favour of a URDF model. -->
+    <node pkg="tf" type="static_transform_publisher" name="imu_broadcaster" args="0 -0.089 -0.494 -1.5708 0 0 base_link imu_link 100" />
+
+    <node pkg="declination" type="apply_to_imu" name="declination_imu" ns="imu" output="screen">
+        <param name="default" value="-0.1693"  />
+        <remap from="data" to="data_compass" />
+        <remap from="data_decl" to="data_final" />
+    </node> 
 </launch>
